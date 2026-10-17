@@ -19,16 +19,22 @@
     .dash-value.highlight { color: #16a34a; font-size: 20px; }
 
     .section-title { font-size: 16px; font-weight: bold; margin: 25px 0 10px 0; color: #334155; display: flex; align-items: center; gap: 8px; }
-    .form-group { display: flex; flex-wrap: wrap; gap: 10px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .form-group { display: flex; flex-wrap: wrap; gap: 10px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; align-items: center; }
     input, select, button { padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
-    input[type="text"] { flex: 2; min-width: 200px; }
-    button.submit-btn { background-color: #16a34a; color: white; border: none; cursor: pointer; font-weight: bold; width: 100%; margin-top: 5px; font-size: 15px; }
-    button.submit-btn:hover { background-color: #15803d; }
+    input[type="text"] { flex: 2; min-width: 180px; }
+    select.type-select { font-weight: bold; }
+    select.type-select.buy { color: #16a34a; border-color: #16a34a; }
+    select.type-select.sell { color: #dc2626; border-color: #dc2626; }
+    button.submit-btn { background-color: #2563eb; color: white; border: none; cursor: pointer; font-weight: bold; width: 100%; margin-top: 5px; font-size: 15px; }
+    button.submit-btn:hover { background-color: #1d4ed8; }
 
     table { width: 100%; border-collapse: collapse; margin-bottom: 20px; background: white; font-size: 13.5px; }
     th, td { padding: 10px 8px; text-align: center; border-bottom: 1px solid #e2e8f0; }
     th { background-color: #1e293b; color: white; font-weight: 600; white-space: nowrap; }
     tr:nth-child(even) { background-color: #f8fafc; }
+
+    .tag-buy { background-color: #dcfce7; color: #15803d; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; }
+    .tag-sell { background-color: #fee2e2; color: #b91c1c; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; }
 
     .delete-btn { background-color: #ef4444; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
     .delete-btn:hover { background-color: #dc2626; }
@@ -63,9 +69,14 @@
     </div>
   </div>
 
-  <div class="section-title">➕ 新增買進交易紀錄 (支援全台股/ETF 搜尋)</div>
+  <div class="section-title">➕ 新增買進 / 賣出交易紀錄</div>
   <form id="stockForm" class="form-group">
-    <input type="text" id="stockId" list="stockList" placeholder="搜尋全台股名稱或代碼 (如: 2330, 00918, 聯發科)" required autocomplete="off">
+    <select id="type" class="type-select buy" onchange="updateTypeStyle(this)">
+      <option value="BUY">🟢 買進</option>
+      <option value="SELL">🔴 賣出</option>
+    </select>
+
+    <input type="text" id="stockId" list="stockList" placeholder="搜尋全台股名稱或代碼" required autocomplete="off">
     <datalist id="stockList"></datalist>
     
     <input type="number" id="shares" placeholder="股數/張數" required style="width: 90px;" min="1">
@@ -74,7 +85,7 @@
       <option value="1000">張</option>
     </select>
     
-    <input type="number" id="price" placeholder="買進單價" step="0.001" required style="width: 100px;">
+    <input type="number" id="price" placeholder="成交單價" step="0.001" required style="width: 100px;">
     <input type="date" id="date" required>
     
     <button type="submit" class="submit-btn">儲存交易紀錄</button>
@@ -103,11 +114,12 @@
   <table>
     <thead>
       <tr>
-        <th>買進日期</th>
+        <th>買賣</th>
+        <th>交易日期</th>
         <th>標的名稱</th>
         <th>成交股數</th>
-        <th>買進單價</th>
-        <th>總投入成本</th>
+        <th>成交單價</th>
+        <th>交易金額</th>
         <th>操作</th>
       </tr>
     </thead>
@@ -124,7 +136,14 @@
 
   document.getElementById('date').valueAsDate = new Date();
 
-  // 自動從 FinMind 載入全台灣上市、上櫃股票與 ETF 清單
+  function updateTypeStyle(select) {
+    if (select.value === 'BUY') {
+      select.className = 'type-select buy';
+    } else {
+      select.className = 'type-select sell';
+    }
+  }
+
   async function initAllTaiwanStockList() {
     try {
       const res = await fetch('https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInfo');
@@ -140,7 +159,7 @@
         });
       }
     } catch (e) {
-      console.warn("全台股清單載入失敗，採用動態解析機制", e);
+      console.warn("全台股清單載入失敗", e);
     }
   }
 
@@ -151,9 +170,10 @@
     loadRecords();
   }
 
-  // 新增交易紀錄
+  // 新增交易紀錄 (買進 / 賣出)
   document.getElementById('stockForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const type = document.getElementById('type').value;
     const stockInput = document.getElementById('stockId').value.trim();
     const stockCode = stockInput.split(' ')[0];
     const shares = parseInt(document.getElementById('shares').value) * parseInt(document.getElementById('unit').value);
@@ -164,12 +184,14 @@
       const res = await fetch(`${API_BASE_URL}/api/transactions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user: currentUser, stockId: stockInput, stockCode: stockCode, shares: shares, price: price, date: date })
+        body: JSON.stringify({ user: currentUser, stockId: stockInput, stockCode: stockCode, shares: shares, price: price, date: date, type: type })
       });
 
       if (res.ok) {
         document.getElementById('stockForm').reset();
         document.getElementById('date').valueAsDate = new Date();
+        document.getElementById('type').value = 'BUY';
+        updateTypeStyle(document.getElementById('type'));
         loadRecords();
       }
     } catch (e) {
@@ -177,11 +199,11 @@
     }
   });
 
-  // 載入資料並計算
+  // 載入資料並計算 (處理買與賣)
   async function loadRecords() {
     const summaryTbody = document.getElementById('summaryTable');
     const recordTbody = document.getElementById('recordTable');
-    summaryTbody.innerHTML = '<tr><td colspan="8">🔍 正在向 API 查詢最新歷史公告配息...</td></tr>';
+    summaryTbody.innerHTML = '<tr><td colspan="8">🔍 正在計算持股與最新公告配息...</td></tr>';
     recordTbody.innerHTML = '';
 
     try {
@@ -194,14 +216,19 @@
 
       if (records.length === 0) {
         summaryTbody.innerHTML = '<tr><td colspan="8">尚無持股資料</td></tr>';
-        recordTbody.innerHTML = '<tr><td colspan="6">尚無交易細項紀錄</td></tr>';
+        recordTbody.innerHTML = '<tr><td colspan="7">尚無交易細項紀錄</td></tr>';
       } else {
-        records.forEach(data => {
-          const code = data.stockCode || data.stockId.split(' ')[0];
-          
-          // 歷史紀錄細項 (單價顯示至小數點後三位)
+        // 倒序顯示歷史紀錄（最新的在最上面）
+        const displayRecords = [...records].reverse();
+
+        displayRecords.forEach(data => {
+          const type = data.type || 'BUY';
+          const isBuy = type === 'BUY';
+          const typeTag = isBuy ? '<span class="tag-buy">🟢 買進</span>' : '<span class="tag-sell">🔴 賣出</span>';
+
           const tr = document.createElement('tr');
           tr.innerHTML = `
+            <td>${typeTag}</td>
             <td>${data.date}</td>
             <td><strong>${data.stockId}</strong></td>
             <td>${data.shares.toLocaleString()} 股</td>
@@ -210,26 +237,49 @@
             <td><button class="delete-btn" onclick="deleteRecord(${data.id})">🗑️ 刪除</button></td>
           `;
           recordTbody.appendChild(tr);
+        });
 
-          // 個股持股合併
+        // 正序計算移動平均成本與持股庫存
+        records.forEach(data => {
+          const code = data.stockCode || data.stockId.split(' ')[0];
+          const type = data.type || 'BUY';
+          
           if (!stockMap[code]) {
             stockMap[code] = { code: code, fullName: data.stockId, totalShares: 0, totalCost: 0 };
           }
-          stockMap[code].totalShares += data.shares;
-          stockMap[code].totalCost += data.total;
+
+          if (type === 'BUY') {
+            stockMap[code].totalShares += data.shares;
+            stockMap[code].totalCost += data.total;
+          } else if (type === 'SELL') {
+            if (stockMap[code].totalShares > 0) {
+              const currentAvgPrice = stockMap[code].totalCost / stockMap[code].totalShares;
+              stockMap[code].totalShares -= data.shares;
+              if (stockMap[code].totalShares <= 0) {
+                stockMap[code].totalShares = 0;
+                stockMap[code].totalCost = 0;
+              } else {
+                // 賣出按平均成本扣減總成本
+                stockMap[code].totalCost = stockMap[code].totalShares * currentAvgPrice;
+              }
+            }
+          }
         });
 
         summaryTbody.innerHTML = '';
         
         for (const code of Object.keys(stockMap)) {
           const item = stockMap[code];
-          const avgCost = (item.totalCost / item.totalShares).toFixed(3); // 平均成本顯示至小數點後三位
+
+          // 若賣光了就不顯示在持股總覽
+          if (item.totalShares <= 0) continue;
+
+          const avgCost = (item.totalCost / item.totalShares).toFixed(3);
           const stockName = allStockMap[code] || item.fullName.split(' ')[1] || item.fullName;
           
           let lastDiv = 0;
           let perShareAnnual = 0;
 
-          // 動態呼叫 API 抓取配息
           try {
             const divRes = await fetch(`${API_BASE_URL}/api/dividend?code=${code}`);
             const divData = await divRes.json();
@@ -260,6 +310,10 @@
           `;
           summaryTbody.appendChild(tr);
         }
+
+        if (summaryTbody.children.length === 0) {
+          summaryTbody.innerHTML = '<tr><td colspan="8">所有持股均已結清出清</td></tr>';
+        }
       }
 
       // 更新頂部卡片數據
@@ -276,7 +330,7 @@
 
   // 刪除紀錄
   async function deleteRecord(id) {
-    if (confirm("確定要刪除這筆買進紀錄嗎？")) {
+    if (confirm("確定要刪除這筆交易紀錄嗎？")) {
       try {
         const res = await fetch(`${API_BASE_URL}/api/transactions?id=${id}`, { method: 'DELETE' });
         if (res.ok) loadRecords();

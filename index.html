@@ -21,7 +21,7 @@
     .section-title { font-size: 16px; font-weight: bold; margin: 25px 0 10px 0; color: #334155; display: flex; align-items: center; gap: 8px; }
     .form-group { display: flex; flex-wrap: wrap; gap: 10px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }
     input, select, button { padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
-    input[type="text"] { flex: 2; min-width: 180px; }
+    input[type="text"] { flex: 2; min-width: 200px; }
     button.submit-btn { background-color: #16a34a; color: white; border: none; cursor: pointer; font-weight: bold; width: 100%; margin-top: 5px; font-size: 15px; }
     button.submit-btn:hover { background-color: #15803d; }
 
@@ -29,12 +29,6 @@
     th, td { padding: 10px 8px; text-align: center; border-bottom: 1px solid #e2e8f0; }
     th { background-color: #1e293b; color: white; font-weight: 600; white-space: nowrap; }
     tr:nth-child(even) { background-color: #f8fafc; }
-    .badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
-    .badge-month { background: #dcfce7; color: #15803d; }
-    .badge-quarter { background: #dbeafe; color: #1d4ed8; }
-    .badge-half { background: #fef3c7; color: #b45309; }
-    .badge-year { background: #f3e8ff; color: #6b21a8; }
-    .badge-none { background: #f1f5f9; color: #64748b; }
 
     .delete-btn { background-color: #ef4444; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
     .delete-btn:hover { background-color: #dc2626; }
@@ -69,31 +63,10 @@
     </div>
   </div>
 
-  <div class="section-title">➕ 新增買進交易紀錄</div>
+  <div class="section-title">➕ 新增買進交易紀錄 (支援全台股/ETF 搜尋)</div>
   <form id="stockForm" class="form-group">
-    <input type="text" id="stockId" list="stockList" placeholder="選擇或輸入股號/名稱 (如: 00918, 2330)" required autocomplete="off">
-    <datalist id="stockList">
-      <option value="00403A 主動統一升級50"></option>
-      <option value="0050 元大台灣50"></option>
-      <option value="0056 元大高股息"></option>
-      <option value="00878 國泰永續高股息"></option>
-      <option value="00900 富邦特選高股息30"></option>
-      <option value="00918 大華優利高填息30"></option>
-      <option value="00919 群益台灣精選高息"></option>
-      <option value="00934 中信成長高股息"></option>
-      <option value="00946 群益科技高息成長"></option>
-      <option value="009816 凱基台灣TOP50"></option>
-      <option value="2542 興富發"></option>
-      <option value="2603 長榮"></option>
-      <option value="2812 台中銀"></option>
-      <option value="2881 富邦金"></option>
-      <option value="2883 凱基金"></option>
-      <option value="2887 台新新光金"></option>
-      <option value="2890 永豐金"></option>
-      <option value="2891 中信金"></option>
-      <option value="2892 第一金"></option>
-      <option value="5876 上海商銀"></option>
-    </datalist>
+    <input type="text" id="stockId" list="stockList" placeholder="搜尋全台股名稱或代碼 (如: 2330, 00918, 聯發科)" required autocomplete="off">
+    <datalist id="stockList"></datalist>
     
     <input type="number" id="shares" placeholder="股數/張數" required style="width: 90px;" min="1">
     <select id="unit">
@@ -107,20 +80,18 @@
     <button type="submit" class="submit-btn">儲存交易紀錄</button>
   </form>
 
-  <div class="section-title">📌 個股持股與配息總覽 (近一年公告自動計算)</div>
+  <div class="section-title">📌 個股持股與配息總覽 (全台股 API 動態試算)</div>
   <table>
     <thead>
       <tr>
         <th>代碼</th>
-        <th>名稱</th>
+        <th>標的名稱</th>
         <th>持股數</th>
         <th>平均成本</th>
-        <th>頻率</th>
         <th>最近一次配息</th>
         <th>推估年配息(每股)</th>
         <th>年配總額</th>
         <th>平均月配</th>
-        <th>參考現價</th>
       </tr>
     </thead>
     <tbody id="summaryTable">
@@ -147,35 +118,31 @@
 </div>
 
 <script>
-  // Cloudflare Worker 網址
   const API_BASE_URL = "https://myrespond.wpeanut001.workers.dev";
-
-  // 靜態對照庫 (頻率、預設單次/年配、參考現價，API失敗時備用)
-  const STOCK_INFO_DB = {
-    "00403A": { name: "主動統一升級50", freq: "不配息", badge: "badge-none", lastDiv: 0, estAnnual: 0, price: 10.41 },
-    "0050":   { name: "元大台灣50", freq: "半年配", badge: "badge-half", lastDiv: 1.0, estAnnual: 2.0, price: 109.0 },
-    "0056":   { name: "元大高股息", freq: "季配", badge: "badge-quarter", lastDiv: 1.0, estAnnual: 4.0, price: 58.75 },
-    "00878":  { name: "國泰永續高股息", freq: "季配", badge: "badge-quarter", lastDiv: 0.66, estAnnual: 2.64, price: 35.53 },
-    "00900":  { name: "富邦特選高股息30", freq: "月配", badge: "badge-month", lastDiv: 0.075, estAnnual: 0.9, price: 19.90 },
-    "00918":  { name: "大華優利高填息30", freq: "季配", badge: "badge-quarter", lastDiv: 1.75, estAnnual: 5.04, price: 34.53 },
-    "00919":  { name: "群益台灣精選高息", freq: "季配", badge: "badge-quarter", lastDiv: 0.72, estAnnual: 2.88, price: 32.74 },
-    "00934":  { name: "中信成長高股息", freq: "月配", badge: "badge-month", lastDiv: 0.25, estAnnual: 3.0, price: 30.31 },
-    "00946":  { name: "群益科技高息成長", freq: "月配", badge: "badge-month", lastDiv: 0.058, estAnnual: 0.696, price: 15.70 },
-    "009816": { name: "凱基台灣TOP50", freq: "不配息", badge: "badge-none", lastDiv: 0, estAnnual: 0, price: 16.20 },
-    "2542":   { name: "興富發", freq: "年配", badge: "badge-year", lastDiv: 4.0, estAnnual: 4.0, price: 39.65 },
-    "2603":   { name: "長榮", freq: "年配", badge: "badge-year", lastDiv: 16.0, estAnnual: 16.0, price: 265.5 },
-    "2812":   { name: "台中銀", freq: "年配", badge: "badge-year", lastDiv: 1.06, estAnnual: 1.06, price: 18.90 },
-    "2881":   { name: "富邦金", freq: "年配", badge: "badge-year", lastDiv: 4.25, estAnnual: 4.25, price: 161.5 },
-    "2883":   { name: "凱基金", freq: "年配", badge: "badge-year", lastDiv: 1.0, estAnnual: 1.0, price: 39.10 },
-    "2887":   { name: "台新新光金", freq: "年配", badge: "badge-year", lastDiv: 1.1, estAnnual: 1.1, price: 42.45 },
-    "2890":   { name: "永豐金", freq: "年配", badge: "badge-year", lastDiv: 2.3, estAnnual: 2.3, price: 45.75 },
-    "2891":   { name: "中信金", freq: "年配", badge: "badge-year", lastDiv: 2.3, estAnnual: 2.3, price: 73.60 },
-    "2892":   { name: "第一金", freq: "年配", badge: "badge-year", lastDiv: 1.3, estAnnual: 1.3, price: 41.50 },
-    "5876":   { name: "上海商銀", freq: "年配", badge: "badge-year", lastDiv: 1.8, estAnnual: 1.8, price: 54.30 }
-  };
-
   let currentUser = '老公';
+  let allStockMap = {}; // 用於全台股代碼與名稱對照
+
   document.getElementById('date').valueAsDate = new Date();
+
+  // 1. 自動從 FinMind 載入全台灣上市、上櫃股票與 ETF 清單
+  async function initAllTaiwanStockList() {
+    try {
+      const res = await fetch('https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInfo');
+      const data = await res.json();
+      if (data.data) {
+        const datalist = document.getElementById('stockList');
+        datalist.innerHTML = '';
+        data.data.forEach(item => {
+          allStockMap[item.stock_id] = item.stock_name;
+          const option = document.createElement('option');
+          option.value = `${item.stock_id} ${item.stock_name}`;
+          datalist.appendChild(option);
+        });
+      }
+    } catch (e) {
+      console.warn("全台股清單載入失敗，採用動態解析機制", e);
+    }
+  }
 
   function switchUser(user) {
     currentUser = user;
@@ -187,7 +154,7 @@
   // 新增交易紀錄
   document.getElementById('stockForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const stockInput = document.getElementById('stockId').value;
+    const stockInput = document.getElementById('stockId').value.trim();
     const stockCode = stockInput.split(' ')[0];
     const shares = parseInt(document.getElementById('shares').value) * parseInt(document.getElementById('unit').value);
     const price = parseFloat(document.getElementById('price').value);
@@ -210,11 +177,11 @@
     }
   });
 
-  // 載入資料並整理計算
+  // 載入資料並計算
   async function loadRecords() {
     const summaryTbody = document.getElementById('summaryTable');
     const recordTbody = document.getElementById('recordTable');
-    summaryTbody.innerHTML = '<tr><td colspan="10">🔍 正在向 API 自動查詢最新配息與近一年總和...</td></tr>';
+    summaryTbody.innerHTML = '<tr><td colspan="8">🔍 正在向 API 查詢全台股最新歷史公告配息...</td></tr>';
     recordTbody.innerHTML = '';
 
     try {
@@ -226,7 +193,7 @@
       let grandTotalAnnualDiv = 0;
 
       if (records.length === 0) {
-        summaryTbody.innerHTML = '<tr><td colspan="10">尚無持股資料</td></tr>';
+        summaryTbody.innerHTML = '<tr><td colspan="8">尚無持股資料</td></tr>';
         recordTbody.innerHTML = '<tr><td colspan="6">尚無交易細項紀錄</td></tr>';
       } else {
         records.forEach(data => {
@@ -244,7 +211,7 @@
           `;
           recordTbody.appendChild(tr);
 
-          // 個股持股合併邏輯
+          // 個股持股合併
           if (!stockMap[code]) {
             stockMap[code] = { code: code, fullName: data.stockId, totalShares: 0, totalCost: 0 };
           }
@@ -252,32 +219,30 @@
           stockMap[code].totalCost += data.total;
         });
 
-        // 渲染個股持股總覽表
         summaryTbody.innerHTML = '';
         
         for (const code of Object.keys(stockMap)) {
           const item = stockMap[code];
           const avgCost = (item.totalCost / item.totalShares).toFixed(2);
-          const baseInfo = STOCK_INFO_DB[code] || { name: item.fullName, freq: "年配", badge: "badge-year", lastDiv: 0, estAnnual: 0, price: avgCost };
+          const stockName = allStockMap[code] || item.fullName.split(' ')[1] || item.fullName;
           
-          let lastDiv = baseInfo.lastDiv;       // 最近一次單次配息
-          let perShareAnnual = baseInfo.estAnnual; // 每股推估年配息
+          let lastDiv = 0;
+          let perShareAnnual = 0;
 
-          // 向 API 抓取最新公告
+          // 動態呼叫 API 抓取全台股/ETF 配息
           try {
             const divRes = await fetch(`${API_BASE_URL}/api/dividend?code=${code}`);
             const divData = await divRes.json();
             if (divData.success) {
-              if (divData.lastDiv > 0) lastDiv = divData.lastDiv;
-              if (divData.annualEstimate > 0) perShareAnnual = divData.annualEstimate;
+              lastDiv = divData.lastDiv || 0;
+              perShareAnnual = divData.annualEstimate || 0;
             }
           } catch (err) {
-            console.warn("API 抓取失敗，採用備用庫", err);
+            console.warn(`[${code}] API 抓取失敗`, err);
           }
 
-          // 年配總金額 = 持股數 * 每股推估年配息
           const annualTotal = Math.round(item.totalShares * perShareAnnual);
-          const monthlyDiv = (annualTotal / 12).toFixed(1);
+          const monthlyDiv = Math.round(annualTotal / 12); // 年配總額 ÷ 12 得到平均月配
 
           grandTotalCost += item.totalCost;
           grandTotalAnnualDiv += annualTotal;
@@ -285,21 +250,19 @@
           const tr = document.createElement('tr');
           tr.innerHTML = `
             <td><strong>${code}</strong></td>
-            <td>${baseInfo.name}</td>
+            <td>${stockName}</td>
             <td>${item.totalShares.toLocaleString()}</td>
             <td>$${avgCost}</td>
-            <td><span class="badge ${baseInfo.badge}">${baseInfo.freq}</span></td>
             <td><strong>$${Number(lastDiv).toFixed(2)}</strong></td>
             <td>$${Number(perShareAnnual).toFixed(2)}</td>
             <td><strong>$${annualTotal.toLocaleString()}</strong></td>
-            <td>$${Number(monthlyDiv).toLocaleString()}</td>
-            <td>$${baseInfo.price}</td>
+            <td>$${monthlyDiv.toLocaleString()}</td>
           `;
           summaryTbody.appendChild(tr);
         }
       }
 
-      // 更新頂部總覽數據
+      // 更新頂部卡片數據
       document.getElementById('totalCost').innerText = Math.round(grandTotalCost).toLocaleString();
       document.getElementById('totalDividend').innerText = Math.round(grandTotalAnnualDiv).toLocaleString();
       document.getElementById('monthlyDividend').innerText = Math.round(grandTotalAnnualDiv / 12).toLocaleString();
@@ -307,7 +270,7 @@
       document.getElementById('yieldRate').innerText = yieldRate;
 
     } catch (e) {
-      summaryTbody.innerHTML = `<tr><td colspan="10" style="color:red;">載入失敗：${e.message}</td></tr>`;
+      summaryTbody.innerHTML = `<tr><td colspan="8" style="color:red;">載入失敗：${e.message}</td></tr>`;
     }
   }
 
@@ -323,6 +286,7 @@
     }
   }
 
+  initAllTaiwanStockList();
   loadRecords();
 </script>
 

@@ -74,7 +74,7 @@
       <option value="1000">張</option>
     </select>
     
-    <input type="number" id="price" placeholder="買進單價" step="0.01" required style="width: 100px;">
+    <input type="number" id="price" placeholder="買進單價" step="0.001" required style="width: 100px;">
     <input type="date" id="date" required>
     
     <button type="submit" class="submit-btn">儲存交易紀錄</button>
@@ -199,13 +199,13 @@
         records.forEach(data => {
           const code = data.stockCode || data.stockId.split(' ')[0];
           
-          // 歷史紀錄細項
+          // 歷史紀錄細項 (單價顯示至小數點後三位)
           const tr = document.createElement('tr');
           tr.innerHTML = `
             <td>${data.date}</td>
             <td><strong>${data.stockId}</strong></td>
             <td>${data.shares.toLocaleString()} 股</td>
-            <td>$${data.price}</td>
+            <td>$${Number(data.price).toFixed(3)}</td>
             <td>$${Math.round(data.total).toLocaleString()}</td>
             <td><button class="delete-btn" onclick="deleteRecord(${data.id})">🗑️ 刪除</button></td>
           `;
@@ -223,7 +223,7 @@
         
         for (const code of Object.keys(stockMap)) {
           const item = stockMap[code];
-          const avgCost = (item.totalCost / item.totalShares).toFixed(2);
+          const avgCost = (item.totalCost / item.totalShares).toFixed(3); // 平均成本顯示至小數點後三位
           const stockName = allStockMap[code] || item.fullName.split(' ')[1] || item.fullName;
           
           let lastDiv = 0;

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>家庭股票與 ETF 記帳本</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+    .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+    h1 { text-align: center; color: #2c3e50; }
+    .tabs { display: flex; justify-content: center; margin-bottom: 20px; }
+    .tab-btn { padding: 10px 20px; border: none; cursor: pointer; font-size: 16px; background-color: #e0e0e0; margin: 0 5px; border-radius: 5px; transition: 0.3s; }
+    .tab-btn.active { background-color: #3498db; color: white; }
+    .form-group { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; background: #ecf0f1; padding: 15px; border-radius: 8px; }
+    input, select, button { padding: 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; }
+    button.submit-btn { background-color: #27ae60; color: white; border: none; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px; }
+    button.submit-btn:hover { background-color: #2ecc71; }
+    .dashboard { display: flex; justify-content: space-between; background: #e8f8f5; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: bold; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { padding: 12px; text-align: center; border-bottom: 1px solid #ddd; }
+    th { background-color: #34495e; color: white; }
+    .delete-btn { background-color: #e74c3c; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>📈 我們的股票記帳本</h1>
+  
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchUser('老公')">👨 老公的帳戶</button>
+    <button class="tab-btn" onclick="switchUser('老婆')">👩 老婆的帳戶</button>
+  </div>
+
+  <div class="dashboard">
+    <div>總投入成本: <span id="totalCost">0</span> 元</div>
+    <div>推估年領股息: <span id="totalDividend">0</span> 元</div>
+    <div>推估殖利率: <span id="yieldRate">0</span> %</div>
+  </div>
+
+  <form id="stockForm" class="form-group">
+    <input type="text" id="stockId" list="stockList" placeholder="輸入股號 (如: 2330)" required>
+    <datalist id="stockList">
+      <option value="2330 台積電"></option>
+      <option value="0050 元大台灣50"></option>
+      <option value="0056 元大高股息"></option>
+      <option value="00878 國泰永續高股息"></option>
+      <option value="2884 玉山金"></option>
+    </datalist>
+    
+    <input type="number" id="shares" placeholder="數量" required style="width: 80px;">
+    <select id="unit">
+      <option value="1">股</option>
+      <option value="1000">張</option>
+    </select>
+    
+    <input type="number" id="price" placeholder="成交價" step="0.01" required>
+    <input type="date" id="date" required>
+    
+    <button type="submit" class="submit-btn">新增交易紀錄</button>
+  </form>
+
+  <table>
+    <thead>
+      <tr>
+        <th>日期</th>
+        <th>股票</th>
+        <th>股數</th>
+        <th>買進價</th>
+        <th>總成本</th>
+        <th>預估股息</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody id="recordTable">
+      <!-- 資料會從 Firebase 載入到這裡 -->
+    </tbody>
+  </table>
+</div>
+
+<!-- 載入 Firebase 模組化 SDK (這裡使用了你截圖裡的專屬金鑰) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+  import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+  // 這是從你提供的截圖中整理出來的專屬金鑰
+  const firebaseConfig = {
+    apiKey: "AIzaSyAJFFmw1HsgEueMDKNV0ClApe5ouQC5nl8",
+    authDomain: "mystocktracker-2f29e.firebaseapp.com",
+    projectId: "mystocktracker-2f29e",
+    storageBucket: "mystocktracker-2f29e.firebasestorage.app",
+    messagingSenderId: "1013155456946",
+    appId: "1:1013155456946:web:6c8432cf824600879266ab"
+  };
+
+  // 初始化 Firebase 與資料庫
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // 內建模擬的配息與價格資料庫 (可隨時手動更新)
+  const STOCK_DB = {
+    "2330": { price: 800, cashDiv: 14, stockDiv: 0, exDate: "2024-12-31" },
+    "0050": { price: 150, cashDiv: 5, stockDiv: 0, exDate: "2024-12-31" },
+    "0056": { price: 38, cashDiv: 2.2, stockDiv: 0, exDate: "2024-12-31" },
+    "00878": { price: 22, cashDiv: 1.4, stockDiv: 0, exDate: "2024-12-31" },
+    "2884": { price: 26, cashDiv: 1.2, stockDiv: 1.2, exDate: "2024-12-31" } // 玉山金有配股
+  };
+
+  let currentUser = '老公';
+  
+  // 設定日期預設為今天
+  document.getElementById('date').valueAsDate = new Date();
+
+  // 切換使用者
+  window.switchUser = function(user) {
+    currentUser = user;
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+    loadRecords();
+  };
+
+  // 提交表單新增紀錄
+  document.getElementById('stockForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const stockInput = document.getElementById('stockId').value;
+    const stockId = stockInput.split(' ')[0]; // 只取代號
+    const shares = parseInt(document.getElementById('shares').value) * parseInt(document.getElementById('unit').value);
+    const price = parseFloat(document.getElementById('price').value);
+    const date = document.getElementById('date').value;
+
+    try {
+      await addDoc(collection(db, "transactions"), {
+        user: currentUser,
+        stockId: stockInput,
+        shares: shares,
+        price: price,
+        total: shares * price,
+        date: date,
+        timestamp: new Date()
+      });
+      document.getElementById('stockForm').reset();
+      document.getElementById('date').valueAsDate = new Date();
+      loadRecords();
+    } catch (e) {
+      alert("新增失敗，請確認 Firebase 測試模式權限是否開啟！錯誤：" + e);
+    }
+  });
+
+  // 載入資料並計算
+  async function loadRecords() {
+    const q = query(collection(db, "transactions"), where("user", "==", currentUser));
+    const querySnapshot = await getDocs(q);
+    const tbody = document.getElementById('recordTable');
+    tbody.innerHTML = '';
+    
+    let totalCostAcc = 0;
+    let totalDivAcc = 0;
+
+    querySnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      const id = docSnap.id;
+      const code = data.stockId.split(' ')[0];
+      const stockInfo = STOCK_DB[code] || { price: data.price, cashDiv: 0, stockDiv: 0, exDate: "2099-12-31" };
+      
+      // 計算配息 (判斷是否在除息日前買進)
+      let estimatedDiv = 0;
+      if(new Date(data.date) <= new Date(stockInfo.exDate)) {
+        const cashDivTotal = data.shares * stockInfo.cashDiv;
+        // 配股換算現金：(持有股數 / 1000) * 配股金額 * 100 * 目前股價
+        const stockDivValue = (data.shares / 1000) * (stockInfo.stockDiv * 100) * stockInfo.price;
+        estimatedDiv = Math.round(cashDivTotal + stockDivValue);
+      }
+
+      totalCostAcc += data.total;
+      totalDivAcc += estimatedDiv;
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${data.date}</td>
+        <td>${data.stockId}</td>
+        <td>${data.shares} 股</td>
+        <td>$${data.price}</td>
+        <td>$${Math.round(data.total).toLocaleString()}</td>
+        <td>$${estimatedDiv.toLocaleString()}</td>
+        <td><button class="delete-btn" onclick="deleteRecord('${id}')">刪除</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // 更新儀表板
+    document.getElementById('totalCost').innerText = Math.round(totalCostAcc).toLocaleString();
+    document.getElementById('totalDividend').innerText = Math.round(totalDivAcc).toLocaleString();
+    const yieldRate = totalCostAcc > 0 ? ((totalDivAcc / totalCostAcc) * 100).toFixed(2) : 0;
+    document.getElementById('yieldRate').innerText = yieldRate;
+  }
+
+  // 刪除紀錄
+  window.deleteRecord = async function(id) {
+    if(confirm("確定要刪除這筆紀錄嗎？")) {
+      await deleteDoc(doc(db, "transactions", id));
+      loadRecords();
+    }
+  };
+
+  // 初始載入
+  loadRecords();
+</script>
+
+</body>
+</html>

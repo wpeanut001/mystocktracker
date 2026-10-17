@@ -120,11 +120,11 @@
 <script>
   const API_BASE_URL = "https://myrespond.wpeanut001.workers.dev";
   let currentUser = '老公';
-  let allStockMap = {}; // 用於全台股代碼與名稱對照
+  let allStockMap = {}; 
 
   document.getElementById('date').valueAsDate = new Date();
 
-  // 1. 自動從 FinMind 載入全台灣上市、上櫃股票與 ETF 清單
+  // 自動從 FinMind 載入全台灣上市、上櫃股票與 ETF 清單
   async function initAllTaiwanStockList() {
     try {
       const res = await fetch('https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInfo');
@@ -181,7 +181,7 @@
   async function loadRecords() {
     const summaryTbody = document.getElementById('summaryTable');
     const recordTbody = document.getElementById('recordTable');
-    summaryTbody.innerHTML = '<tr><td colspan="8">🔍 正在向 API 查詢全台股最新歷史公告配息...</td></tr>';
+    summaryTbody.innerHTML = '<tr><td colspan="8">🔍 正在向 API 查詢最新歷史公告配息...</td></tr>';
     recordTbody.innerHTML = '';
 
     try {
@@ -229,7 +229,7 @@
           let lastDiv = 0;
           let perShareAnnual = 0;
 
-          // 動態呼叫 API 抓取全台股/ETF 配息
+          // 動態呼叫 API 抓取配息
           try {
             const divRes = await fetch(`${API_BASE_URL}/api/dividend?code=${code}`);
             const divData = await divRes.json();
@@ -242,7 +242,7 @@
           }
 
           const annualTotal = Math.round(item.totalShares * perShareAnnual);
-          const monthlyDiv = Math.round(annualTotal / 12); // 年配總額 ÷ 12 得到平均月配
+          const monthlyDiv = Math.round(annualTotal / 12);
 
           grandTotalCost += item.totalCost;
           grandTotalAnnualDiv += annualTotal;
@@ -253,8 +253,8 @@
             <td>${stockName}</td>
             <td>${item.totalShares.toLocaleString()}</td>
             <td>$${avgCost}</td>
-            <td><strong>$${Number(lastDiv).toFixed(2)}</strong></td>
-            <td>$${Number(perShareAnnual).toFixed(2)}</td>
+            <td><strong>$${Number(lastDiv).toFixed(3)}</strong></td>
+            <td>$${Number(perShareAnnual).toFixed(3)}</td>
             <td><strong>$${annualTotal.toLocaleString()}</strong></td>
             <td>$${monthlyDiv.toLocaleString()}</td>
           `;

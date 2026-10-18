@@ -154,7 +154,7 @@
         data.data.forEach(item => {
           allStockMap[item.stock_id] = item.stock_name;
           const option = document.createElement('option');
-          option.value = `${item.stock_id} ${item.stock_name}`;
+          option.value = `${item.stock_id}${item.stock_name}`;
           datalist.appendChild(option);
         });
       }
@@ -199,7 +199,7 @@
     }
   });
 
-  // 載入資料並計算 (處理買與賣)
+  // 載入資料並計算 (修復重複顯示問題)
   async function loadRecords() {
     const summaryTbody = document.getElementById('summaryTable');
     const recordTbody = document.getElementById('recordTable');
@@ -218,9 +218,8 @@
         summaryTbody.innerHTML = '<tr><td colspan="8">尚無持股資料</td></tr>';
         recordTbody.innerHTML = '<tr><td colspan="7">尚無交易細項紀錄</td></tr>';
       } else {
-        // 倒序顯示歷史紀錄（最新的在最上面）
+        // 1. 先渲染下方「歷史交易紀錄細項」（倒序：最新在最上方）
         const displayRecords = [...records].reverse();
-
         displayRecords.forEach(data => {
           const type = data.type || 'BUY';
           const isBuy = type === 'BUY';
@@ -232,14 +231,13 @@
             <td>${data.date}</td>
             <td><strong>${data.stockId}</strong></td>
             <td>${data.shares.toLocaleString()} 股</td>
-            <td>$${Number(data.price).toFixed(3)}</td>
-            <td>$${Math.round(data.total).toLocaleString()}</td>
+            <td>$${Number(data.price).toFixed(3)}</td> <td>$${Math.round(data.total).toLocaleString()}</td>
             <td><button class="delete-btn" onclick="deleteRecord(${data.id})">🗑️ 刪除</button></td>
           `;
           recordTbody.appendChild(tr);
         });
 
-        // 正序計算移動平均成本與持股庫存
+        // 2. 統計個股合併持股（正序計算移動平均成本）
         records.forEach(data => {
           const code = data.stockCode || data.stockId.split(' ')[0];
           const type = data.type || 'BUY';
@@ -259,19 +257,20 @@
                 stockMap[code].totalShares = 0;
                 stockMap[code].totalCost = 0;
               } else {
-                // 賣出按平均成本扣減總成本
                 stockMap[code].totalCost = stockMap[code].totalShares * currentAvgPrice;
               }
             }
           }
         });
 
+        // 3. 徹底清空總覽表格，準備只渲染一次！
         summaryTbody.innerHTML = '';
         
+        // 4. 開始渲染總覽表格
         for (const code of Object.keys(stockMap)) {
           const item = stockMap[code];
 
-          // 若賣光了就不顯示在持股總覽
+          // 若持股為 0 則不顯示
           if (item.totalShares <= 0) continue;
 
           const avgCost = (item.totalCost / item.totalShares).toFixed(3);
@@ -301,12 +300,9 @@
           tr.innerHTML = `
             <td><strong>${code}</strong></td>
             <td>${stockName}</td>
-            <td>${item.totalShares.toLocaleString()}</td>
-            <td>$${avgCost}</td>
-            <td><strong>$${Number(lastDiv).toFixed(3)}</strong></td>
-            <td>$${Number(perShareAnnual).toFixed(3)}</td>
-            <td><strong>$${annualTotal.toLocaleString()}</strong></td>
-            <td>$${monthlyDiv.toLocaleString()}</td>
+            <td>${item.totalShares.toLocaleString()}</td> <td>$${avgCost}</td>
+            <td><strong>$${Number(lastDiv).toFixed(3)}</strong></td> <td>$${Number(perShareAnnual).toFixed(3)}</td>
+            <td><strong>$${annualTotal.toLocaleString()}</strong></td> <td>$${monthlyDiv.toLocaleString()}</td>
           `;
           summaryTbody.appendChild(tr);
         }
@@ -316,7 +312,7 @@
         }
       }
 
-      // 更新頂部卡片數據
+      // 5. 更新頂部總統計數據
       document.getElementById('totalCost').innerText = Math.round(grandTotalCost).toLocaleString();
       document.getElementById('totalDividend').innerText = Math.round(grandTotalAnnualDiv).toLocaleString();
       document.getElementById('monthlyDividend').innerText = Math.round(grandTotalAnnualDiv / 12).toLocaleString();
@@ -332,17 +328,4 @@
   async function deleteRecord(id) {
     if (confirm("確定要刪除這筆交易紀錄嗎？")) {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/transactions?id=${id}`, { method: 'DELETE' });
-        if (res.ok) loadRecords();
-      } catch (e) {
-        alert("刪除失敗：" + e.message);
-      }
-    }
-  }
-
-  initAllTaiwanStockList();
-  loadRecords();
-</script>
-
-</body>
-</html>
+        const res = await fetch(`${API_BASE_URL}/api/transactions

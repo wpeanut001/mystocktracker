@@ -170,7 +170,7 @@
     loadRecords();
   }
 
-  // 新增交易紀錄 (買進 / 賣出)
+  // 新增交易紀錄
   document.getElementById('stockForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const type = document.getElementById('type').value;
@@ -199,133 +199,126 @@
     }
   });
 
-  // 載入資料並計算 (修復重複顯示問題)
+  // 載入資料並計算 (並列飆速 + 徹底去重)
   async function loadRecords() {
     const summaryTbody = document.getElementById('summaryTable');
     const recordTbody = document.getElementById('recordTable');
-    summaryTbody.innerHTML = '<tr><td colspan="8">🔍 正在計算持股與最新公告配息...</td></tr>';
+    
+    summaryTbody.innerHTML = '<tr><td colspan="8">⚡ 正在高速載入與計算最新配息...</td></tr>';
     recordTbody.innerHTML = '';
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/transactions?user=${encodeURIComponent(currentUser)}`);
       const records = await res.json();
 
-      let stockMap = {};
-      let grandTotalCost = 0;
-      let grandTotalAnnualDiv = 0;
-
-      if (records.length === 0) {
+      if (!records || records.length === 0) {
         summaryTbody.innerHTML = '<tr><td colspan="8">尚無持股資料</td></tr>';
         recordTbody.innerHTML = '<tr><td colspan="7">尚無交易細項紀錄</td></tr>';
-      } else {
-        // 1. 先渲染下方「歷史交易紀錄細項」（倒序：最新在最上方）
-        const displayRecords = [...records].reverse();
-        displayRecords.forEach(data => {
-          const type = data.type || 'BUY';
-          const isBuy = type === 'BUY';
-          const typeTag = isBuy ? '<span class="tag-buy">🟢 買進</span>' : '<span class="tag-sell">🔴 賣出</span>';
+        
+        document.getElementById('totalCost').innerText = '0';
+        document.getElementById('totalDividend').innerText = '0';
+        document.getElementById('monthlyDividend').innerText = '0';
+        document.getElementById('yieldRate').innerText = '0';
+        return;
+      }
 
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
+      // 1. 渲染歷史紀錄細項 (倒序)
+      let recordHtml = '';
+      [...records].reverse().forEach(data => {
+        const type = data.type || 'BUY';
+        const isBuy = type === 'BUY';
+        const typeTag = isBuy ? '<span class="tag-buy">🟢 買進</span>' : '<span class="tag-sell">🔴 賣出</span>';
+
+        recordHtml += `
+          <tr>
             <td>${typeTag}</td>
             <td>${data.date}</td>
             <td><strong>${data.stockId}</strong></td>
             <td>${data.shares.toLocaleString()} 股</td>
             <td>$${Number(data.price).toFixed(3)}</td> <td>$${Math.round(data.total).toLocaleString()}</td>
             <td><button class="delete-btn" onclick="deleteRecord(${data.id})">🗑️ 刪除</button></td>
-          `;
-          recordTbody.appendChild(tr);
-        });
+          </tr>
+        `;
+      });
+      recordTbody.innerHTML = recordHtml;
 
-        // 2. 統計個股合併持股（正序計算移動平均成本）
-        records.forEach(data => {
-          const code = data.stockCode || data.stockId.split(' ')[0];
-          const type = data.type || 'BUY';
-          
-          if (!stockMap[code]) {
-            stockMap[code] = { code: code, fullName: data.stockId, totalShares: 0, totalCost: 0 };
-          }
-
-          if (type === 'BUY') {
-            stockMap[code].totalShares += data.shares;
-            stockMap[code].totalCost += data.total;
-          } else if (type === 'SELL') {
-            if (stockMap[code].totalShares > 0) {
-              const currentAvgPrice = stockMap[code].totalCost / stockMap[code].totalShares;
-              stockMap[code].totalShares -= data.shares;
-              if (stockMap[code].totalShares <= 0) {
-                stockMap[code].totalShares = 0;
-                stockMap[code].totalCost = 0;
-              } else {
-                stockMap[code].totalCost = stockMap[code].totalShares * currentAvgPrice;
-              }
-            }
-          }
-        });
-
-        // 3. 徹底清空總覽表格，準備只渲染一次！
-        summaryTbody.innerHTML = '';
+      // 2. 正確統計個股持股 (正序)
+      let stockMap = {};
+      records.forEach(data => {
+        const code = data.stockCode || data.stockId.split(' ')[0];
+        const type = data.type || 'BUY';
         
-        // 4. 開始渲染總覽表格
-        for (const code of Object.keys(stockMap)) {
-          const item = stockMap[code];
+        if (!stockMap[code]) {
+          stockMap[code] = { code: code, fullName: data.stockId, totalShares: 0, totalCost: 0 };
+        }
 
-          // 若持股為 0 則不顯示
-          if (item.totalShares <= 0) continue;
-
-          const avgCost = (item.totalCost / item.totalShares).toFixed(3);
-          const stockName = allStockMap[code] || item.fullName.split(' ')[1] || item.fullName;
-          
-          let lastDiv = 0;
-          let perShareAnnual = 0;
-
-          try {
-            const divRes = await fetch(`${API_BASE_URL}/api/dividend?code=${code}`);
-            const divData = await divRes.json();
-            if (divData.success) {
-              lastDiv = divData.lastDiv || 0;
-              perShareAnnual = divData.annualEstimate || 0;
+        if (type === 'BUY') {
+          stockMap[code].totalShares += data.shares;
+          stockMap[code].totalCost += data.total;
+        } else if (type === 'SELL') {
+          if (stockMap[code].totalShares > 0) {
+            const currentAvgPrice = stockMap[code].totalCost / stockMap[code].totalShares;
+            stockMap[code].totalShares -= data.shares;
+            if (stockMap[code].totalShares <= 0) {
+              stockMap[code].totalShares = 0;
+              stockMap[code].totalCost = 0;
+            } else {
+              stockMap[code].totalCost = stockMap[code].totalShares * currentAvgPrice;
             }
-          } catch (err) {
-            console.warn(`[${code}] API 抓取失敗`, err);
           }
-
-          const annualTotal = Math.round(item.totalShares * perShareAnnual);
-          const monthlyDiv = Math.round(annualTotal / 12);
-
-          grandTotalCost += item.totalCost;
-          grandTotalAnnualDiv += annualTotal;
-
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td><strong>${code}</strong></td>
-            <td>${stockName}</td>
-            <td>${item.totalShares.toLocaleString()}</td> <td>$${avgCost}</td>
-            <td><strong>$${Number(lastDiv).toFixed(3)}</strong></td> <td>$${Number(perShareAnnual).toFixed(3)}</td>
-            <td><strong>$${annualTotal.toLocaleString()}</strong></td> <td>$${monthlyDiv.toLocaleString()}</td>
-          `;
-          summaryTbody.appendChild(tr);
         }
+      });
 
-        if (summaryTbody.children.length === 0) {
-          summaryTbody.innerHTML = '<tr><td colspan="8">所有持股均已結清出清</td></tr>';
-        }
+      // 3. 篩選有庫存的股票代碼
+      const activeCodes = Object.keys(stockMap).filter(code => stockMap[code].totalShares > 0);
+
+      if (activeCodes.length === 0) {
+        summaryTbody.innerHTML = '<tr><td colspan="8">所有持股均已結清出清</td></tr>';
+        document.getElementById('totalCost').innerText = '0';
+        document.getElementById('totalDividend').innerText = '0';
+        document.getElementById('monthlyDividend').innerText = '0';
+        document.getElementById('yieldRate').innerText = '0';
+        return;
       }
 
-      // 5. 更新頂部總統計數據
-      document.getElementById('totalCost').innerText = Math.round(grandTotalCost).toLocaleString();
-      document.getElementById('totalDividend').innerText = Math.round(grandTotalAnnualDiv).toLocaleString();
-      document.getElementById('monthlyDividend').innerText = Math.round(grandTotalAnnualDiv / 12).toLocaleString();
-      const yieldRate = grandTotalCost > 0 ? ((grandTotalAnnualDiv / grandTotalCost) * 100).toFixed(2) : 0;
-      document.getElementById('yieldRate').innerText = yieldRate;
+      // 4. ⚡⚡ 【超極速重點】使用 Promise.all 同時發送所有 API 請求！⚡⚡
+      const divPromises = activeCodes.map(code => 
+        fetch(`${API_BASE_URL}/api/dividend?code=${code}`)
+          .then(r => r.json())
+          .catch(err => ({ success: false, code }))
+      );
 
-    } catch (e) {
-      summaryTbody.innerHTML = `<tr><td colspan="8" style="color:red;">載入失敗：${e.message}</td></tr>`;
-    }
-  }
+      const divResults = await Promise.all(divPromises);
+      
+      // 將 API 結果整理成字典
+      const divDataMap = {};
+      divResults.forEach(res => {
+        if (res && res.code) {
+          divDataMap[res.code] = res;
+        }
+      });
 
-  // 刪除紀錄
-  async function deleteRecord(id) {
-    if (confirm("確定要刪除這筆交易紀錄嗎？")) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/transactions
+      // 5. 記憶體中拼接 HTML 字串 (徹底杜絕重複問題)
+      let grandTotalCost = 0;
+      let grandTotalAnnualDiv = 0;
+      let summaryHtml = '';
+
+      activeCodes.forEach(code => {
+        const item = stockMap[code];
+        const avgCost = (item.totalCost / item.totalShares).toFixed(3);
+        const stockName = allStockMap[code] || item.fullName.split(' ')[1] || item.fullName;
+        
+        const divInfo = divDataMap[code] || {};
+        const lastDiv = divInfo.lastDiv || 0;
+        const perShareAnnual = divInfo.annualEstimate || 0;
+
+        const annualTotal = Math.round(item.totalShares * perShareAnnual);
+        const monthlyDiv = Math.round(annualTotal / 12);
+
+        grandTotalCost += item.totalCost;
+        grandTotalAnnualDiv += annualTotal;
+
+        summaryHtml += `
+          <tr>
+            <td><strong>${code}</strong></td>
+            <td>${stock

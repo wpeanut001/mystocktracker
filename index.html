@@ -17,6 +17,7 @@
     .dash-title { font-size: 12px; color: #64748b; margin-bottom: 4px; }
     .dash-value { font-size: 18px; font-weight: bold; color: #0f172a; }
     .dash-value.highlight { color: #16a34a; font-size: 20px; }
+    .dash-value.loading { color: #94a3b8; font-size: 16px; font-weight: normal; }
 
     .section-title { font-size: 16px; font-weight: bold; margin: 25px 0 10px 0; color: #334155; display: flex; align-items: center; gap: 8px; }
     .form-group { display: flex; flex-wrap: wrap; gap: 10px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; align-items: center; }
@@ -53,19 +54,19 @@
   <div class="dashboard">
     <div class="dash-item">
       <div class="dash-title">總投入成本</div>
-      <div class="dash-value">$<span id="totalCost">0</span></div>
+      <div class="dash-value" id="totalCost">0</div>
     </div>
     <div class="dash-item">
       <div class="dash-title">預估年領股息</div>
-      <div class="dash-value">$<span id="totalDividend">0</span></div>
+      <div class="dash-value" id="totalDividend">0</div>
     </div>
     <div class="dash-item">
       <div class="dash-title">平均月領被動收入</div>
-      <div class="dash-value highlight">$<span id="monthlyDividend">0</span></div>
+      <div class="dash-value highlight" id="monthlyDividend">0</div>
     </div>
     <div class="dash-item">
       <div class="dash-title">平均預估殖利率</div>
-      <div class="dash-value"><span id="yieldRate">0</span> %</div>
+      <div class="dash-value" id="yieldRate">0 %</div>
     </div>
   </div>
 
@@ -144,6 +145,20 @@
     }
   }
 
+  function setDashboardLoading(isLoading) {
+    const elCost = document.getElementById('totalCost');
+    const elDiv = document.getElementById('totalDividend');
+    const elMonth = document.getElementById('monthlyDividend');
+    const elYield = document.getElementById('yieldRate');
+
+    if (isLoading) {
+      elCost.innerHTML = '<span class="loading">計算中...</span>';
+      elDiv.innerHTML = '<span class="loading">計算中...</span>';
+      elMonth.innerHTML = '<span class="loading">計算中...</span>';
+      elYield.innerHTML = '<span class="loading">...</span>';
+    }
+  }
+
   async function initAllTaiwanStockList() {
     try {
       const res = await fetch('https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInfo');
@@ -201,19 +216,21 @@
     }
   });
 
-  // 載入資料並計算 (修復讀取與帳戶切換)
+  // 載入資料並計算
   async function loadRecords() {
     const summaryTbody = document.getElementById('summaryTable');
     const recordTbody = document.getElementById('recordTable');
     
     summaryTbody.innerHTML = '<tr><td colspan="8">⚡ 正在高速載入與計算最新配息...</td></tr>';
     recordTbody.innerHTML = '';
+    
+    // 🌟 在讀取 API 前，先將面板設為「計算中...」避免畫面跳動錯覺
+    setDashboardLoading(true);
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/transactions?user=${encodeURIComponent(currentUser)}`);
       let records = await res.json();
 
-      // 相容性處理：確認取得陣列格式
       if (!Array.isArray(records)) {
         records = records.results || [];
       }
@@ -222,14 +239,14 @@
         summaryTbody.innerHTML = '<tr><td colspan="8">尚無持股資料</td></tr>';
         recordTbody.innerHTML = '<tr><td colspan="7">尚無交易細項紀錄</td></tr>';
         
-        document.getElementById('totalCost').innerText = '0';
-        document.getElementById('totalDividend').innerText = '0';
-        document.getElementById('monthlyDividend').innerText = '0';
-        document.getElementById('yieldRate').innerText = '0';
+        document.getElementById('totalCost').innerText = '$0';
+        document.getElementById('totalDividend').innerText = '$0';
+        document.getElementById('monthlyDividend').innerText = '$0';
+        document.getElementById('yieldRate').innerText = '0.00 %';
         return;
       }
 
-      // 1. 渲染歷史紀錄細項 (倒序)
+      // 1. 渲染歷史紀錄細項
       let recordHtml = '';
       [...records].reverse().forEach(data => {
         const type = data.type || 'BUY';
@@ -251,7 +268,7 @@
       });
       recordTbody.innerHTML = recordHtml;
 
-      // 2. 正確統計個股持股 (正序)
+      // 2. 統計個股持股
       let stockMap = {};
       records.forEach(data => {
         const code = data.stockCode || (data.stockId ? data.stockId.split(' ')[0] : '');
@@ -282,19 +299,18 @@
         }
       });
 
-      // 3. 篩選有庫存的股票代碼
       const activeCodes = Object.keys(stockMap).filter(code => stockMap[code].totalShares > 0);
 
       if (activeCodes.length === 0) {
         summaryTbody.innerHTML = '<tr><td colspan="8">所有持股均已結清出清</td></tr>';
-        document.getElementById('totalCost').innerText = '0';
-        document.getElementById('totalDividend').innerText = '0';
-        document.getElementById('monthlyDividend').innerText = '0';
-        document.getElementById('yieldRate').innerText = '0';
+        document.getElementById('totalCost').innerText = '$0';
+        document.getElementById('totalDividend').innerText = '$0';
+        document.getElementById('monthlyDividend').innerText = '$0';
+        document.getElementById('yieldRate').innerText = '0.00 %';
         return;
       }
 
-      // 4. 並列發送 API 請求抓取配息
+      // 3. API 並行請求配息
       const divPromises = activeCodes.map(code => 
         fetch(`${API_BASE_URL}/api/dividend?code=${code}`)
           .then(r => r.json())
@@ -310,7 +326,6 @@
         }
       });
 
-      // 5. 記憶體中拼接 HTML 字串
       let grandTotalCost = 0;
       let grandTotalAnnualDiv = 0;
       let summaryHtml = '';
@@ -344,22 +359,21 @@
         `;
       });
 
-      // 6. 一次性寫入 DOM
       summaryTbody.innerHTML = summaryHtml;
 
-      // 7. 更新頂部總數據
-      document.getElementById('totalCost').innerText = Math.round(grandTotalCost).toLocaleString();
-      document.getElementById('totalDividend').innerText = Math.round(grandTotalAnnualDiv).toLocaleString();
-      document.getElementById('monthlyDividend').innerText = Math.round(grandTotalAnnualDiv / 12).toLocaleString();
+      // 🌟 API 讀取完畢後，才一次性填入格式化後的正確數字，杜絕跳動！
+      document.getElementById('totalCost').innerText = '$' + Math.round(grandTotalCost).toLocaleString();
+      document.getElementById('totalDividend').innerText = '$' + Math.round(grandTotalAnnualDiv).toLocaleString();
+      document.getElementById('monthlyDividend').innerText = '$' + Math.round(grandTotalAnnualDiv / 12).toLocaleString();
       const yieldRate = grandTotalCost > 0 ? ((grandTotalAnnualDiv / grandTotalCost) * 100).toFixed(2) : 0;
-      document.getElementById('yieldRate').innerText = yieldRate;
+      document.getElementById('yieldRate').innerText = yieldRate + ' %';
 
     } catch (e) {
       summaryTbody.innerHTML = `<tr><td colspan="8" style="color:red;">載入失敗：${e.message}</td></tr>`;
+      setDashboardLoading(false); // 若失敗也要清除載入狀態
     }
   }
 
-  // 刪除紀錄
   async function deleteRecord(id) {
     if (confirm("確定要刪除這筆交易紀錄嗎？")) {
       try {
